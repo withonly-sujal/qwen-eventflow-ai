@@ -56,8 +56,8 @@ async def chat(request: ChatRequest):
     try:
         # Run the agent with the user's prompt
         response = await agent.run(request.prompt, session, request.persona)
-        # Format it slightly to match the UI expectation (convert newlines to <br>)
-        formatted = response.replace("\n", "<br>")
+        # Format it slightly to match the UI expectation (convert newlines to <br>, strip markdown asterisks)
+        formatted = response.replace("*", "").replace("\n", "<br>")
         return {"response": formatted}
     except Exception as exc:
         return {"error": str(exc)}
