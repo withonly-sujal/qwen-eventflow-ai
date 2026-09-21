@@ -23,3 +23,5 @@ __pycache__/
 #Solace Data
 Solace_EP_Data/
 
+#Documentation
+Solace_MCP_Decoupling_Strategy.md

@@ -50,7 +50,7 @@ uv run python -m EventFlow_AI.app
 Start the FastAPI web server to use the graphical interface:
 
 ```bash
-uv run uvicorn EventFlow_AI.web_server:app --host 0.0.0.0 --port 8000
+uv run python -m uvicorn EventFlow_AI.web_server:app --host 0.0.0.0 --port 8000
 ```
 Then open `http://localhost:8000` in your web browser.
 
