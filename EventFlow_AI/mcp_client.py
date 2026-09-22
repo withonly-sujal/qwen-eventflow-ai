@@ -301,41 +301,45 @@ async def _search_entity(session: ClientSession, entity_type: str, name: str = N
             return {"error": f"Domain '{domain_name}' not found."}
         args["applicationDomainId"] = domain_res[0]["id"]
     
+    data = []
     if entity_type == "domain":
-        # Solace getApplicationDomains allows filtering by name
         data = await _call_mcp(session, "getApplicationDomains", args)
-        return {"result": data}
-        
     elif entity_type == "application":
-        # Solace getApplications allows filtering by name
         data = await _call_mcp(session, "getApplications", args)
-        return {"result": data}
-        
     elif entity_type == "event":
-        # Solace getEvents allows filtering by name
         data = await _call_mcp(session, "getEvents", args)
-        return {"result": data}
-        
     elif entity_type == "event_api":
         data = await _call_mcp(session, "getEventApis", args)
-        return {"result": data}
-        
     elif entity_type == "event_api_product":
         data = await _call_mcp(session, "getEventApiProducts", args)
-        return {"result": data}
-        
     elif entity_type == "schema":
         data = await _call_mcp(session, "getSchemas", args)
-        return {"result": data}
-        
     elif entity_type == "enum":
-        # Solace getEnums uses 'names' instead of 'name'
-        if "name" in args:
-            args["names"] = [args.pop("name")]
+        if "name" in args: args["names"] = [args.pop("name")]
         data = await _call_mcp(session, "getEnums", args)
+    else:
+        return {"error": f"Unsupported entity_type: {entity_type}"}
+
+    if entity_type == "domain" or not isinstance(data, list):
         return {"result": data}
-        
-    return {"error": f"Unsupported entity_type: {entity_type}"}
+
+    enriched_results = []
+    for item in data:
+        if isinstance(item, dict) and "id" in item:
+            version_tool = f"get{entity_type.replace('_', ' ').title().replace(' ', '')}Versions"
+            id_param = f"{entity_type.replace('_', ' ').title().replace(' ', '')[:1].lower() + entity_type.replace('_', ' ').title().replace(' ', '')[1:]}Ids"
+            if entity_type == "event_api": id_param = "eventApiIds"
+            
+            try:
+                versions = await _call_mcp(session, version_tool, {id_param: [item["id"]]})
+                if versions and isinstance(versions, list) and len(versions) > 0:
+                    item["latest_version_id"] = versions[0].get("id")
+                    item["latest_version"] = versions[0].get("version")
+            except Exception:
+                pass
+        enriched_results.append(item)
+
+    return {"result": enriched_results}
 
 
 async def _get_relationships(session: ClientSession, entity_id: str, relationship_type: str) -> dict:
@@ -394,7 +398,7 @@ async def _get_relationships(session: ClientSession, entity_id: str, relationshi
     elif relationship_type == "event_apis":
         prod_vers = await _call_mcp(session, "getEventApiProductVersions", {"eventApiProductIds": [entity_id]})
         if not prod_vers or isinstance(prod_vers, dict): return {"result": []}
-        api_ver_ids = prod_vers[0].get("declaredEventApiVersionIds", [])
+        api_ver_ids = prod_vers[0].get("eventApiVersionIds", [])
         if not api_ver_ids: return {"result": []}
         
         apis = []
@@ -688,7 +692,7 @@ async def _duplicate_entity(session: ClientSession, entity_type: str, source_ent
     source_ver = source_vers[0]
     create_ver_payload = {"version": "0.1.0", id_param[:-1]: new_entity_id}
     
-    for key in ["declaredEventApiVersionIds", "declaredProducedEventVersionIds", "declaredConsumedEventVersionIds", "schemaVersionId", "schemaId"]:
+    for key in ["eventApiVersionIds", "declaredProducedEventVersionIds", "declaredConsumedEventVersionIds", "producedEventVersionIds", "consumedEventVersionIds", "schemaVersionId", "schemaId"]:
         if key in source_ver: create_ver_payload[key] = source_ver[key]
 
     create_ver_tool = f"create{entity_type.replace('_', ' ').title().replace(' ', '')}Version"
@@ -704,8 +708,8 @@ async def _update_relationship(session: ClientSession, entity_type: str, version
     
     source_ver = source_vers[0]
     array_key = None
-    if entity_type == "event_api_product" and target_type == "event_api": array_key = "declaredEventApiVersionIds"
-    elif entity_type == "event_api" and target_type == "event": array_key = "declaredProducedEventVersionIds" 
+    if entity_type == "event_api_product" and target_type == "event_api": array_key = "eventApiVersionIds"
+    elif entity_type == "event_api" and target_type == "event": array_key = "producedEventVersionIds" 
     elif entity_type == "application" and target_type == "event": array_key = "declaredProducedEventVersionIds"
     
     if not array_key: return {"error": f"Mapping between {entity_type} and {target_type} unsupported."}

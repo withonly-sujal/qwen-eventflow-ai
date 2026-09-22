@@ -51,3 +51,22 @@ The `search_solace_entity` tool schema exposed to the LLM only provided `name` a
 ### What we can do about it
 **Status:** Resolved.
 We updated the `search_solace_entity` tool schema in `mcp_client.py` to accept an optional `entity_id` parameter. We then updated the `_search_entity` function to detect `entity_id` and map it to the underlying `ids` array parameter expected by Solace API retrieval tools.
+
+---
+
+## 4. Relationship Linking Failures & AI Hallucinations (Resolved)
+
+This issue consists of two related subparts where the AI struggled to successfully link entities together.
+
+### Subpart A: AI Hallucinated Success on Relationship Updates
+**What it is:** When asking the LLM to link an Event API to an Event API Product, the LLM confidently reported success, but the Solace Web UI showed no changes were actually made.
+**Why it is:** The `mcp_client.py` orchestrator was mapping the relationship arrays using incorrect JSON property names (e.g., `"declaredEventApiVersionIds"` instead of `"eventApiVersionIds"`). Because the Solace Event Portal API uses `PATCH` requests to update entity versions, the Solace backend simply ignored the unrecognized property and silently returned a `200 OK` success response without throwing an error.
+**What we did:** We updated `mcp_client.py` to use the correct property names required by the OpenAPI schema:
+- **Event API Product to Event API:** `eventApiVersionIds`
+- **Event API to Event:** `producedEventVersionIds` / `consumedEventVersionIds`
+- **Application to Event:** `declaredProducedEventVersionIds` / `declaredConsumedEventVersionIds`
+
+### Subpart B: AI Outputted XML Instead of Calling Tool
+**What it is:** When asked to link an Event to a new version of an Event API, the AI outputted a raw XML block with a placeholder ID (`<!-- Replace with actual version ID -->`) instead of successfully executing the tool.
+**Why it is:** To link entities, the AI requires the exact **Version ID** (e.g., `e9xvw0ccxep`), not the base **Entity ID** (e.g., `891dnbvimon`). The AI called the `search_solace_entity` tool to find the Version ID, but due to a bug in the Python backend, the tool only returned the base Entity ID. Because the AI had no other tool to discover the version ID, it gave up and outputted the XML template of what it *wanted* to execute.
+**What we did:** We updated `_search_entity` in `mcp_client.py` to correctly iterate over the returned search results and perform a secondary API call to the respective `/versions` endpoint, successfully fetching and attaching `latest_version_id` to every search result.

@@ -34,7 +34,9 @@ SYSTEM_PROMPTS = {
 
 You are operating in ADMIN mode.
 You are fully capable of mutating state. Use `create_solace_entity` to create new domains, apps, and events.
-If you need to create a new version of an existing entity, use `create_solace_entity_version`.""",
+If you need to create a new version of an existing entity, use `create_solace_entity_version`.
+
+CRITICAL: Do NOT use runtime broker tools (like `manage_solace_queue`) unless the user explicitly mentions queues, topic subscriptions, or the runtime event broker. Event Portal entities (Events, Event APIs, etc.) are design-time constructs and do not require physical queue verification!""",
 
     "end_user": _BASE_PROMPT + """
 
