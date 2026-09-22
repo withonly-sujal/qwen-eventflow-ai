@@ -1,14 +1,15 @@
 1. Admin Persona
 Design-Time (Event Portal)
-Show me all Event API Products currently available for the Airport domain.
-Which Event APIs are included in the Flight Information Event API Product?
-Show me all applications consuming events from the Flight Information API.
-Create a new version of the Flight Information Event API based on the current version.
-Duplicate the NOTAM Event API Product and name the new product NOTAMv2.
-Add the AircraftPosition event to the new version of the Surveillance Event API.
+Show me all Event API Products currently available for the Airport domain. (Works)
+Which Event APIs are included in the Flight Information Event API Product? (Works)
+Show me all applications consuming events from the Flight Information API. (Works)
+Create a new version of the Flight Information Event API based on the current version. (Works)
+Duplicate the NOTAM Event API Product and name the new product NOTAMv2. (Works)
+Add the AircraftPosition event to the new version of the Surveillance Event API. (Works)
 Show me Event APIs that reference schemas that are not using their latest version.
 Which Event API Products will be affected if the FlightStatus event is modified?
-Show me all Event API Products associated with application domain Airport Operations.
+Show me all Event API Products associated with application domain Airport Operations. (Works)
+Add latest version of 'Surveillance' Event API in 'Flight Information' Event API Product (Works)
 
 Runtime / Event Broker
 Duplicate the YYZ-FlightObject queue and name the new queue YYZ-FlightObject-v2.
