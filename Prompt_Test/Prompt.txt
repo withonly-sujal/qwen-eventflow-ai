@@ -6,56 +6,56 @@ Show me all applications consuming events from the Flight Information API. (Work
 Create a new version of the Flight Information Event API based on the current version. (Works)
 Duplicate the NOTAM Event API Product and name the new product NOTAMv2. (Works)
 Add the AircraftPosition event to the new version of the Surveillance Event API. (Works)
-Show me Event APIs that reference schemas that are not using their latest version.
-Which Event API Products will be affected if the FlightStatus event is modified?
+Show me Event APIs that reference schemas that are not using their latest version. (Works)
+Which Event API Products will be affected if the FlightStatus event is modified? (Works)
 Show me all Event API Products associated with application domain Airport Operations. (Works)
 Add latest version of 'Surveillance' Event API in 'Flight Information' Event API Product (Works)
 
 Runtime / Event Broker
-Duplicate the YYZ-FlightObject queue and name the new queue YYZ-FlightObject-v2.
-Duplicate the YYZ-NOTAM queue and name the new queue YOW-NOTAM-v2:
-In the new queue, replace subscription /NOTAM/YYZ/* with /NOTAM/YOW/*.
-Set queue TTL to 10 hours.
-Show me the configuration and QoS parameters for queue YYZ-NOTAM.
-Compare the configuration of queues YYZ-NOTAM and YOW-NOTAM.
-Add topic subscription /A-CDM/YYZ/flight/*/YYZ/> to queue AIRCANADA-YYZ-ARRIVALS.
-Remove topic subscription flight/test/> from queue AIRCANADA-YYZ-ARRIVALS.
-Show me all topic subscriptions configured on queue ABC.
-Which queues currently have no active consumers?
-Show me queues with messages accumulating and no active consumers.
-Show me queues that are approaching their configured spool limit.
-Which client applications are currently connected to queue AIRCANADA-YYZ-ARRIVALS?
-Show me the ACL profile associated with client AIRCANADA.
-Show me failed or disconnected client connections associated with application FlightTracker.
-Compare queue configuration between QA and Production for application FlightTracker.
+Duplicate the YYZ-FlightObject queue and name the new queue YYZ-FlightObject-v2. (Works)
+Duplicate the YYZ-NOTAM queue and name the new queue YOW-NOTAM-v2. (Works)
+In the new queue, replace subscription NOTAM/YYZ/* with NOTAM/YOW/*. (Works)
+Set queue TTL to 10 hours. (Works)
+Show me the configuration and QoS parameters for queue YYZ-NOTAM. (Works)
+Compare the configuration of queues YYZ-NOTAM and YOW-NOTAM. (Works)
+Add topic subscription A-CDM/YYZ/flight/*/YYZ/> to queue AIRCANADA-YYZ-ARRIVALS. (Works)
+Remove topic subscription flight/test/> from queue AIRCANADA-YYZ-ARRIVALS. (Works)
+Show me all topic subscriptions configured on queue ABC. (Works)
+Which queues currently have no active consumers? (Works)
+Show me queues with messages accumulating and no active consumers. (Works)
+Show me queues that are approaching their configured spool limit. (Works)
+Which client applications are currently connected to queue AIRCANADA-YYZ-ARRIVALS? (Works)
+Show me the ACL profile associated with client AIRCANADA. (Works)
+Show me failed or disconnected client connections associated with application FlightTracker. (Out of Scope)
+Compare queue configuration between QA and Production for application FlightTracker. (Out of Scope)
 
 2. End User Persona
 Design-Time / Event Portal
-Find Event API Products that provide flight position information.
-What events are available through the Flight Information Event API Product?
-Show me the schema for the FlightStatus event.
-Which version of the Flight Information Event API should my application use?
-Explain what information is contained in the AircraftPosition event.
-Show me the Event API documentation for the product my application is subscribed to.
-What Event API Products are available to my application FlightTracker?
-Show me the events that my application is authorized to consume.
-What changed between versions 1.2 and 1.3 of the Event API used by my WestJet-Apron-movement application?
+Find Event API Products that provide flight position information. (Works)
+What events are available through the Flight Information Event API Product? (Works)
+Show me the schema for the FlightStatus event. (Works)
+Which version of the Event API inside the 'Flight Information' Product should I use? (Works)
+Explain what information is contained in the AircraftPosition event. (Works)
+Show me the Event API documentation for the product my 'FlightTracker' application is subscribed to. (Works)
+What Event API Products are available to my application FlightTracker? (Works)
+Show me the events that my 'FlightTracker' application is authorized to consume. (Works)
+What changed between versions 1.2 and 1.3 of the Event API used by my WestJet-Apron-movement application? (Works)
 
 Runtime / Event Broker
-Show me the queue provisioned for my FlightTracker application.
-What topic subscriptions are configured on my application's queue?
-Is my queue currently connected to a consumer?
-How many messages are currently waiting on my queue?
-Is my application currently connected to the message broker?
-Why is my application not receiving messages from queue XYZ?
-Show me recent connection failures for my application.
-Show me the messaging endpoint and connection information for my QA environment.
-What runtime resources were provisioned when my subscription was approved?
-Is the subscription for my application fully provisioned in Production?
+Show me the queue provisioned for my FlightTracker application. (Works)
+What topic subscriptions are configured on my application's queue? (Works)
+Is my queue currently connected to a consumer? (Works)
+How many messages are currently waiting on my queue? (Works)
+Is my application currently connected to the message broker? (Works)
+Why is my application not receiving messages from queue XYZ? (Works)
+Show me recent connection failures for my application. (Out of Scope)
+Show me the messaging endpoint and connection information for my QA environment. (Out of Scope)
+What runtime resources were provisioned when my subscription was approved? (Out of Scope)
+Is the subscription for my application fully provisioned in Production? 
 
 3. Cross-System Prompts (Portal + Broker Reconciliation)
 Show me the Event API Product subscribed to by application FlightTracker and the queue provisioned for that subscription.
-Is the runtime queue configuration for FlightTracker consistent with its approved Event API Product subscription?
+Is the runtime queue configuration for FlightTracker consistent with its approved Event API Product subscription? (Out of Scope)
 Which applications subscribe to the FlightStatus event, and which runtime queues are associated with those applications?
 If Event API Product NOTAM is retired, which applications, subscriptions, and runtime queues will be affected?
-Show me applications that have an approved subscription in PostgreSQL DB but do not have the expected runtime queue provisioned on the event broker.
+Show me applications that have an approved subscription in PostgreSQL DB but do not have the expected runtime queue provisioned on the event broker. (Out of Scope)

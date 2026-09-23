@@ -169,6 +169,20 @@ GENERALIZED_TOOLS = [
         }
     },
     {
+        "name": "get_schema_content",
+        "description": "Smart tool that retrieves the actual JSON or AVRO schema data fields. You can pass an Event ID, Event Version ID, Schema ID, or Schema Version ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "entity_id": {
+                    "type": "string",
+                    "description": "The ID of the event or schema entity to fetch content for."
+                }
+            },
+            "required": ["entity_id"]
+        }
+    },
+    {
         "name": "create_solace_entity",
         "description": "Creates a new Solace Domain, Application, or Event, along with its initial version (0.1.0).",
         "inputSchema": {
@@ -342,6 +356,44 @@ async def _search_entity(session: ClientSession, entity_type: str, name: str = N
     return {"result": enriched_results}
 
 
+async def _get_schema_content(session: ClientSession, entity_id: str) -> dict:
+    """Smart router to extract actual JSON/AVRO schema content from various ID types."""
+    schema_version_id = None
+    
+    # Helper to fetch by both 'ids' and 'parentIds'
+    async def _fetch(tool, id_param):
+        res = await _call_mcp(session, tool, {"ids": [entity_id]})
+        if res and isinstance(res, list) and len(res) > 0: return res
+        res = await _call_mcp(session, tool, {id_param: [entity_id]})
+        if res and isinstance(res, list) and len(res) > 0: return res
+        return []
+
+    # 1. Could it be an Event? (Event Version or Base Event ID)
+    evt_vers = await _fetch("getEventVersions", "eventIds")
+    if evt_vers:
+        # Get schemaVersionId from the event version
+        schema_version_id = evt_vers[0].get("schemaVersionId")
+        
+    if not schema_version_id:
+        # 2. Could it be a Schema? (Schema Version or Base Schema ID)
+        sch_vers = await _fetch("getSchemaVersions", "schemaIds")
+        if sch_vers:
+            # We already have the schema version
+            return {"result": sch_vers[0].get("content", "Schema found but it has no text content.")}
+            
+    if not schema_version_id:
+        # 3. Was it explicitly passed a schemaVersionId?
+        schema_version_id = entity_id
+
+    # Now fetch the schema content using the schema_version_id
+    res = await _call_mcp(session, "getSchemaVersions", {"ids": [schema_version_id]})
+    if res and isinstance(res, list) and len(res) > 0:
+        content = res[0].get("content")
+        return {"result": content if content else "Schema found but it has no text content."}
+        
+    return {"error": f"Could not find schema content for ID {entity_id}. Ensure the ID is a valid Event or Schema."}
+
+
 async def _get_relationships(session: ClientSession, entity_id: str, relationship_type: str) -> dict:
     """Executes the get_entity_relationships logic by chaining Solace tools."""
     
@@ -353,21 +405,35 @@ async def _get_relationships(session: ClientSession, entity_id: str, relationshi
         return {"result": clean_apps}
         
     elif relationship_type in ["produced_events", "consumed_events"]:
-        # 1. We have the App ID. We need its latest Version ID to see its events.
-        app_versions = await _call_mcp(session, "getApplicationVersions", {"applicationIds": [entity_id]})
+        event_version_ids = []
         
+        # Helper to fetch version by trying both 'ids' (version ID) and 'XXXIds' (base ID)
+        async def _fetch_versions(tool_name, base_id_param):
+            res = await _call_mcp(session, tool_name, {"ids": [entity_id]})
+            if res and isinstance(res, list) and len(res) > 0: return res
+            res = await _call_mcp(session, tool_name, {base_id_param: [entity_id]})
+            if res and isinstance(res, list) and len(res) > 0: return res
+            return []
+
+        # 1. Try treating entity_id as an Application
+        app_versions = await _fetch_versions("getApplicationVersions", "applicationIds")
+        if app_versions:
+            latest = app_versions[0]
+            if relationship_type == "produced_events":
+                event_version_ids = latest.get("declaredProducedEventVersionIds", [])
+            else:
+                event_version_ids = latest.get("declaredConsumedEventVersionIds", [])
+                
+        # 2. Try treating entity_id as an Event API if it wasn't an Application
         if not app_versions:
-            return {"result": [], "message": "No application versions found for this app ID."}
-            
-        # Grab the first (latest) version
-        latest_version = app_versions[0]
-        
-        # 2. Extract the IDs of the events it produces/consumes
-        if relationship_type == "produced_events":
-            event_version_ids = latest_version.get("declaredProducedEventVersionIds", [])
-        else:
-            event_version_ids = latest_version.get("declaredConsumedEventVersionIds", [])
-            
+            api_versions = await _fetch_versions("getEventApiVersions", "eventApiIds")
+            if api_versions:
+                latest = api_versions[0]
+                if relationship_type == "produced_events":
+                    event_version_ids = latest.get("producedEventVersionIds", [])
+                else:
+                    event_version_ids = latest.get("consumedEventVersionIds", [])
+                    
         if not event_version_ids:
             return {"result": []}
             
@@ -409,11 +475,25 @@ async def _get_relationships(session: ClientSession, entity_id: str, relationshi
         return {"result": apis}
 
     elif relationship_type == "consuming_applications":
-        # Forward to impact analysis. Assumes entity_id is a version_id or we fetch latest version.
-        # We will assume it's the parent ID and fetch latest version.
+        # Forward to impact analysis. Assumes entity_id is a parent ID and fetches latest version.
         vers = await _call_mcp(session, "getEventApiVersions", {"eventApiIds": [entity_id]})
         if not vers or isinstance(vers, dict): return {"result": []}
-        return await _get_impact(session, "event_api", vers[0]["id"])
+        
+        produced_events = vers[0].get("producedEventVersionIds", [])
+        apps = await _call_mcp(session, "getApplicationVersions", {})
+        consuming_apps = []
+        
+        if isinstance(apps, list):
+            for app in apps:
+                app_consumed = app.get("declaredConsumedEventVersionIds", [])
+                if any(ev_id in app_consumed for ev_id in produced_events):
+                    consuming_apps.append({
+                        "version_id": app.get("id"),
+                        "application_id": app.get("applicationId"),
+                        "version": app.get("version")
+                    })
+                    
+        return {"result": consuming_apps}
 
     return {"error": f"Unsupported relationship_type: {relationship_type}"}
 
@@ -726,16 +806,79 @@ async def _update_relationship(session: ClientSession, entity_type: str, version
 
 
 async def _get_impact(session: ClientSession, entity_type: str, version_id: str) -> dict:
-    tool_name = f"get{entity_type.replace('_', ' ').title().replace(' ', '')}VersionsReferencedBy"
-    if entity_type == "event_api": tool_name = "getEventApiVersionsReferencedBy"
-    elif entity_type == "event": tool_name = "getEventVersionsReferencedBy"
+    impacted = []
     
-    id_param = "id"
-    if entity_type == "event_api": id_param = "eventApiVersionId"
-    elif entity_type == "schema": id_param = "versionId"
-    
-    res = await _call_mcp(session, tool_name, {id_param: version_id})
-    return {"result": res}
+    if entity_type == "event":
+        # Check Event APIs
+        apis = await _call_mcp(session, "getEventApiVersions", {})
+        if isinstance(apis, list):
+            for api in apis:
+                if version_id in api.get("producedEventVersionIds", []) or version_id in api.get("consumedEventVersionIds", []):
+                    api["type"] = "eventApiVersion"
+                    # Fetch parent to get name
+                    parent_id = api.get("eventApiId")
+                    if parent_id:
+                        parent = await _call_mcp(session, "getEventApis", {"ids": [parent_id]})
+                        if isinstance(parent, list) and len(parent) > 0:
+                            api["name"] = parent[0].get("name")
+                    
+                    # Proactively resolve Event API Product names if present, because the AI 
+                    # often sees these IDs and stops without doing the second hop!
+                    if api.get("declaredEventApiProductVersionIds"):
+                        api["declaredEventApiProductNames"] = []
+                        for prod_vid in api["declaredEventApiProductVersionIds"]:
+                            prod_ver = await _call_mcp(session, "getEventApiProductVersions", {"ids": [prod_vid]})
+                            if prod_ver and len(prod_ver) > 0:
+                                prod_parent_id = prod_ver[0].get("eventApiProductId")
+                                if prod_parent_id:
+                                    prod_parent = await _call_mcp(session, "getEventApiProducts", {"ids": [prod_parent_id]})
+                                    if prod_parent and len(prod_parent) > 0:
+                                        api["declaredEventApiProductNames"].append(prod_parent[0].get("name"))
+                                        
+                    impacted.append(api)
+                    
+        # Check Applications
+        apps = await _call_mcp(session, "getApplicationVersions", {})
+        if isinstance(apps, list):
+            for app in apps:
+                if version_id in app.get("declaredProducedEventVersionIds", []) or version_id in app.get("declaredConsumedEventVersionIds", []):
+                    app["type"] = "applicationVersion"
+                    parent_id = app.get("applicationId")
+                    if parent_id:
+                        parent = await _call_mcp(session, "getApplications", {"ids": [parent_id]})
+                        if isinstance(parent, list) and len(parent) > 0:
+                            app["name"] = parent[0].get("name")
+                    impacted.append(app)
+                    
+    elif entity_type == "event_api":
+        # Check Event API Products
+        prods = await _call_mcp(session, "getEventApiProductVersions", {})
+        if isinstance(prods, list):
+            for prod in prods:
+                if version_id in prod.get("eventApiVersionIds", []):
+                    prod["type"] = "eventApiProductVersion"
+                    parent_id = prod.get("eventApiProductId")
+                    if parent_id:
+                        parent = await _call_mcp(session, "getEventApiProducts", {"ids": [parent_id]})
+                        if isinstance(parent, list) and len(parent) > 0:
+                            prod["name"] = parent[0].get("name")
+                    impacted.append(prod)
+                    
+    elif entity_type == "schema":
+        # Check Events
+        evts = await _call_mcp(session, "getEventVersions", {})
+        if isinstance(evts, list):
+            for evt in evts:
+                if version_id == evt.get("schemaVersionId"):
+                    evt["type"] = "eventVersion"
+                    parent_id = evt.get("eventId")
+                    if parent_id:
+                        parent = await _call_mcp(session, "getEvents", {"ids": [parent_id]})
+                        if isinstance(parent, list) and len(parent) > 0:
+                            evt["name"] = parent[0].get("name")
+                    impacted.append(evt)
+                    
+    return {"result": impacted}
 
 
 # ── The Interceptor ────────────────────────────────────────────────────────
@@ -745,6 +888,8 @@ async def execute_smart_tool(session: ClientSession, tool_name: str, args: dict)
     try:
         if tool_name == "search_solace_entity":
             result = await _search_entity(session, args.get("entity_type"), args.get("name"), args.get("domain_name"), args.get("entity_id"))
+        elif tool_name == "get_schema_content":
+            result = await _get_schema_content(session, args.get("entity_id"))
         elif tool_name == "get_entity_relationships":
             result = await _get_relationships(session, args.get("entity_id"), args.get("relationship_type"))
         elif tool_name == "create_solace_entity":

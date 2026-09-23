@@ -24,6 +24,12 @@ async def run(user_query: str, session: ClientSession, persona: str) -> str:
 
     # ── Inject the Generalized Tools ──────────────────────────────────────────
     all_tools = mcp.GENERALIZED_TOOLS + broker.BROKER_TOOLS
+    
+    # Enforce Persona Guardrails by physically removing write tools
+    if persona == "end_user":
+        write_tools = {"create_solace_entity", "create_solace_entity_version", "manage_solace_queue", "manage_queue_subscription"}
+        all_tools = [t for t in all_tools if t["name"] not in write_tools]
+        
     openai_tools = [llm.mcp_to_openai_tool(t) for t in all_tools]
 
     messages = [

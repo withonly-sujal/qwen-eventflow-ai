@@ -36,6 +36,42 @@ BROKER_TOOLS = [
         }
     },
     {
+        "name": "get_queue_stats",
+        "description": "Read-only tool to fetch live telemetry for a queue, including message counts, spool usage, and currently bound consumers/clients.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "queue_name": {
+                    "type": "string",
+                    "description": "The exact name of the queue."
+                }
+            },
+            "required": ["queue_name"]
+        }
+    },
+    {
+        "name": "list_queues",
+        "description": "Read-only tool to list all queues on the broker along with their basic telemetry (spool usage, active consumers, etc). Use this when asked to find queues matching a condition.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "get_queue_subscriptions",
+        "description": "Read-only tool to list all topic subscriptions configured on a specific queue.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "queue_name": {
+                    "type": "string",
+                    "description": "The exact name of the queue."
+                }
+            },
+            "required": ["queue_name"]
+        }
+    },
+    {
         "name": "manage_queue_subscription",
         "description": "List, add, or remove topic subscriptions on a specific queue.",
         "inputSchema": {
@@ -56,6 +92,20 @@ BROKER_TOOLS = [
                 }
             },
             "required": ["action", "queue_name"]
+        }
+    },
+    {
+        "name": "get_client_username",
+        "description": "Read-only tool to fetch the configuration of a client username, which includes its assigned ACL profile and Client profile.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "client_username": {
+                    "type": "string",
+                    "description": "The exact name of the client username to look up."
+                }
+            },
+            "required": ["client_username"]
         }
     }
 ]
@@ -208,11 +258,102 @@ async def _manage_subscription(action: str, queue_name: str, args: dict) -> dict
     return {"error": f"Unknown action: {action}"}
 
 
+async def _get_queue_stats(queue_name: str) -> dict:
+    vpn = os.getenv("SOLACE_SEMPV2_VPN", "default")
+    
+    config = await _semp_request("GET", f"/SEMP/v2/config/msgVpns/{vpn}/queues/{queue_name}")
+    monitor = await _semp_request("GET", f"/SEMP/v2/monitor/msgVpns/{vpn}/queues/{queue_name}")
+    tx_flows = await _semp_request("GET", f"/SEMP/v2/monitor/msgVpns/{vpn}/queues/{queue_name}/txFlows")
+    
+    clients = []
+    if "data" in tx_flows:
+        for flow in tx_flows["data"]:
+            if "clientName" in flow:
+                clients.append(flow["clientName"])
+                
+    return {
+        "config": config.get("data", {}),
+        "monitor_stats": {
+            "spooledMsgCount": monitor.get("data", {}).get("spooledMsgCount", 0),
+            "msgSpoolUsage": monitor.get("data", {}).get("msgSpoolUsage", 0),
+            "bindCount": monitor.get("data", {}).get("bindCount", 0)
+        },
+        "connected_client_names": clients
+    }
+
+
+async def _get_client_username(client_username: str) -> dict:
+    vpn = os.getenv("SOLACE_SEMPV2_VPN", "default")
+    
+    # 1. Fetch Client Username config
+    cu_config = await _semp_request("GET", f"/SEMP/v2/config/msgVpns/{vpn}/clientUsernames/{client_username}")
+    if "error" in cu_config:
+        return cu_config
+        
+    cu_data = cu_config.get("data", {})
+    acl_profile_name = cu_data.get("aclProfileName")
+    
+    # 2. Fetch the assigned ACL profile
+    acl_config = {}
+    if acl_profile_name:
+        acl_res = await _semp_request("GET", f"/SEMP/v2/config/msgVpns/{vpn}/aclProfiles/{acl_profile_name}")
+        acl_config = acl_res.get("data", {})
+        
+    return {
+        "client_username_config": cu_data,
+        "acl_profile_config": acl_config
+    }
+
+
+async def _list_queues() -> dict:
+    vpn = os.getenv("SOLACE_SEMPV2_VPN", "default")
+    response = await _semp_request("GET", f"/SEMP/v2/monitor/msgVpns/{vpn}/queues?count=100")
+    
+    if "error" in response:
+        return response
+        
+    queues = response.get("data", [])
+    simplified = []
+    for q in queues:
+        simplified.append({
+            "queue_name": q.get("queueName"),
+            "active_consumers": q.get("bindCount", 0),
+            "messages_spooled": q.get("spooledMsgCount", 0),
+            "spool_usage_bytes": q.get("msgSpoolUsage", 0),
+            "max_spool_usage_mb": q.get("maxMsgSpoolUsage", 0)
+        })
+        
+    return {"queues": simplified}
+
+
+async def _get_queue_subscriptions(queue_name: str) -> dict:
+    vpn = os.getenv("SOLACE_SEMPV2_VPN", "default")
+    res = await _semp_request("GET", f"/SEMP/v2/config/msgVpns/{vpn}/queues/{queue_name}/subscriptions")
+    if "error" in res:
+        return res
+        
+    subs = []
+    if "data" in res:
+        for sub in res["data"]:
+            if "subscriptionTopic" in sub:
+                subs.append(sub["subscriptionTopic"])
+                
+    return {"topic_subscriptions": subs}
+
+
 async def execute_broker_tool(tool_name: str, args: dict) -> str:
     if tool_name == "manage_solace_queue":
         res = await _manage_queue(args.get("action"), args.get("queue_name"), args)
     elif tool_name == "manage_queue_subscription":
         res = await _manage_subscription(args.get("action"), args.get("queue_name"), args)
+    elif tool_name == "get_queue_stats":
+        res = await _get_queue_stats(args.get("queue_name"))
+    elif tool_name == "list_queues":
+        res = await _list_queues()
+    elif tool_name == "get_queue_subscriptions":
+        res = await _get_queue_subscriptions(args.get("queue_name"))
+    elif tool_name == "get_client_username":
+        res = await _get_client_username(args.get("client_username"))
     else:
         res = {"error": f"Unknown broker tool: {tool_name}"}
         
